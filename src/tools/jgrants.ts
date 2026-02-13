@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchJson } from "../services/fetcher.js";
+import { logError } from "../services/db.js";
 
 const JGRANTS_BASE = "https://api.jgrants-portal.go.jp/exp/v1/public/subsidies";
 const JGRANTS_V2 = "https://api.jgrants-portal.go.jp/exp/v2/public/subsidies/id";
@@ -122,7 +123,9 @@ API: https://api.jgrants-portal.go.jp/exp/v1/public/subsidies
           }],
         };
       } catch (e) {
-        return { content: [{ type: "text" as const, text: `❌ jGrants API エラー: ${e instanceof Error ? e.message : String(e)}` }] };
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        await logError("skill60_search_jgrants", `jGrants検索エラー: ${errorMsg}`, params);
+        return { content: [{ type: "text" as const, text: `❌ jGrants API エラー: ${errorMsg}` }] };
       }
     }
   );
@@ -165,7 +168,9 @@ skill60_search_jgrants で得たIDを渡してください。
 
         return { content: [{ type: "text" as const, text }] };
       } catch (e) {
-        return { content: [{ type: "text" as const, text: `❌ jGrants 詳細取得エラー: ${e instanceof Error ? e.message : String(e)}` }] };
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        await logError("skill60_jgrants_detail", `jGrants詳細取得エラー: ${errorMsg}`, params);
+        return { content: [{ type: "text" as const, text: `❌ jGrants 詳細取得エラー: ${errorMsg}` }] };
       }
     }
   );

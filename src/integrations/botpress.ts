@@ -1,147 +1,135 @@
-// SKILL60+ Botpress連携
-// BotpressからMCPツールを呼び出すHTTPブリッジ
+// SKILL60+ Botpress連携（生データのみ、LLMなし）
 
-import type { Request, Response } from "express";
+import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { logError } from "../services/db.js";
 
-/**
- * Botpress Webhook リクエスト型
- */
-interface BotpressRequest {
-  intent: string;        // インテント名（greet, ask_news, find_jobs等）
-  params: Record<string, unknown>; // パラメータ
-  userId: string;        // ユーザーID
-  conversationId: string; // 会話ID
-}
+// === スキーマ定義 ===
 
-/**
- * MCPツールマッピング
- * Botpressのインテント → MCPツール名
- */
-const INTENT_TO_TOOL: Record<string, string> = {
-  "greet": "skill60_yoshiko_voice",
-  "ask_news": "skill60_fetch_news",
-  "ask_pension": "skill60_nenkin_news",
-  "find_grants": "skill60_search_jgrants",
-  "find_jobs": "skill60_market_value",
-  "health_check": "skill60_health_info",
-  "weather": "skill60_weather_advice",
-  "dialect": "skill60_dialect_convert",
-};
+const BotpressSendSchema = z.object({
+  message: z.string().min(1).max(1000)
+    .describe("Botpressに送信するメッセージ"),
+  userId: z.string().min(1).max(100).default("skill60_user")
+    .describe("ユーザーID（デフォルト: skill60_user）"),
+  conversationId: z.string().max(100).default("")
+    .describe("会話ID（オプション、継続会話時に使用）"),
+}).strict();
 
-/**
- * Botpress Webhookハンドラー
- * POST /bot で受け取り、MCPツールを実行して結果を返す
- */
-export async function handleBotpressWebhook(
-  req: Request,
-  res: Response,
-  mcpTools: Map<string, (params: unknown) => Promise<{ content: Array<{ type: string; text?: string }> }>>
-): Promise<void> {
+// === Botpress API呼び出し ===
+
+async function sendToBotpress(message: string, userId: string, conversationId?: string): Promise<{
+  success: boolean;
+  response?: string;
+  conversationId?: string;
+  error?: string;
+}> {
   try {
-    const body = req.body as BotpressRequest;
+    const webhookUrl = process.env.BOTPRESS_WEBHOOK_URL;
+    const botId = process.env.BOTPRESS_BOT_ID;
 
-    // Webhook署名検証（オプション）
-    const webhookSecret = process.env.BOTPRESS_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const signature = req.headers['x-botpress-signature'] as string;
-      if (!signature || signature !== webhookSecret) {
-        res.status(401).json({ error: "Unauthorized: Invalid webhook signature" });
-        return;
-      }
+    if (!webhookUrl || !botId) {
+      return {
+        success: false,
+        error: "BOTPRESS_WEBHOOK_URL または BOTPRESS_BOT_ID が設定されていません",
+      };
     }
 
-    // インテント → MCPツール名にマッピング
-    const toolName = INTENT_TO_TOOL[body.intent];
-    if (!toolName) {
-      res.status(400).json({
-        error: `Unknown intent: ${body.intent}`,
-        supportedIntents: Object.keys(INTENT_TO_TOOL),
-      });
-      return;
-    }
+    const payload = {
+      type: "text",
+      text: message,
+      userId,
+      ...(conversationId && { conversationId }),
+    };
 
-    // MCPツール実行
-    const tool = mcpTools.get(toolName);
-    if (!tool) {
-      res.status(404).json({ error: `Tool not found: ${toolName}` });
-      return;
-    }
-
-    const result = await tool(body.params);
-
-    // Botpress形式でレスポンス
-    res.status(200).json({
-      userId: body.userId,
-      conversationId: body.conversationId,
-      response: result.content
-        .filter(c => c.type === "text")
-        .map(c => c.text ?? "")
-        .join("\n"),
+    // Manual fetch (fetchJson doesn't support POST with body)
+    const response = await fetch(`${webhookUrl}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-bot-id": botId,
+      },
+      body: JSON.stringify(payload),
     });
+
+    if (!response.ok) {
+      throw new Error(`Botpress API error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json() as {
+      responses?: Array<{ type: string; text?: string }>;
+      conversationId?: string;
+    };
+
+    const responseText = result.responses?.[0]?.text || "応答なし";
+
+    return {
+      success: true,
+      response: responseText,
+      conversationId: result.conversationId,
+    };
   } catch (e) {
-    console.error("[Botpress] Webhook error:", e);
-    res.status(500).json({
-      error: "Internal server error",
-      message: e instanceof Error ? e.message : String(e),
-    });
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    await logError("skill60_botpress_send", `Botpress送信エラー: ${errorMsg}`, { message, userId });
+    return {
+      success: false,
+      error: errorMsg,
+    };
   }
 }
 
-/**
- * Botpressセットアップガイド（README用）
- */
-export const BOTPRESS_SETUP_GUIDE = `
-# Botpress連携セットアップガイド
+// === ツール登録 ===
 
-## 1. Botpress Cloudアカウント作成
-https://botpress.com/ でアカウント作成（無料枠あり）
+export function registerBotpressTools(server: McpServer): void {
 
-## 2. Botpressでボット作成
-- 新しいBotを作成
-- LINE/Web Chatチャンネルを追加
+  server.registerTool(
+    "skill60_botpress_send",
+    {
+      title: "Botpress送信（生データ）",
+      description: `Botpressチャットボットにメッセージを送信します。
 
-## 3. インテント定義
-以下のインテントを作成：
+**このツールは生データを返すのみ。LLM処理は行いません。**
+LLM側でメッセージを生成し、このツールで送信してください。
 
-| インテント名 | 説明 | パラメータ例 |
-|-------------|------|-------------|
-| greet | 挨拶 | { text: "こんにちは", region: "福井" } |
-| ask_news | ニュース取得 | { keyword: "年金", limit: 5 } |
-| ask_pension | 年金情報 | {} |
-| find_grants | 助成金検索 | { keyword: "創業", limit: 10 } |
-| find_jobs | 求人検索 | { skills: ["経理"], region: "東京" } |
-| health_check | 健康情報 | { category: "checkup" } |
-| weather | 天気アドバイス | { region: "福井" } |
-| dialect | 方言変換 | { text: "こんにちは", region: "大阪" } |
+環境変数:
+- BOTPRESS_WEBHOOK_URL: BotpressのWebhook URL
+- BOTPRESS_BOT_ID: ボットID`,
+      inputSchema: BotpressSendSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (params) => {
+      try {
+        const result = await sendToBotpress(params.message, params.userId, params.conversationId || undefined);
 
-## 4. Webhook設定
-Botpressの Settings → Webhooks で以下を設定：
-- URL: https://{VPS_IP}:3100/bot
-- Method: POST
-- Headers: x-botpress-signature: {BOTPRESS_WEBHOOK_SECRET}
+        if (!result.success) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `❌ Botpress送信失敗: ${result.error}`,
+            }],
+          };
+        }
 
-## 5. 環境変数設定
-\`\`\`bash
-export BOTPRESS_WEBHOOK_SECRET="your-secret-key"
-export PORT=3100
-export TRANSPORT=http
-\`\`\`
+        let output = `💬 Botpress送信完了（生データ）\n\n`;
+        output += `【送信】\n${params.message}\n\n`;
+        output += `【応答】\n${result.response}\n\n`;
+        output += `【会話ID】\n${result.conversationId || "新規会話"}`;
 
-## 6. LINE連携（オプション）
-Botpress Cloud で LINE Messaging API を連携
-- LINE Developers で Messaging API チャンネル作成
-- Channel Secret / Access Token を Botpress に設定
-
-## 7. テスト
-\`\`\`bash
-curl -X POST http://localhost:3100/bot \\
-  -H "Content-Type: application/json" \\
-  -H "x-botpress-signature: your-secret-key" \\
-  -d '{
-    "intent": "greet",
-    "params": { "text": "はじめまして", "region": "福井" },
-    "userId": "test-user",
-    "conversationId": "test-conv"
-  }'
-\`\`\`
-`;
+        return {
+          content: [{
+            type: "text" as const,
+            text: output,
+          }],
+        };
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        await logError("skill60_botpress_send", `全体エラー: ${errorMsg}`, params);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `❌ Botpress送信エラー: ${errorMsg}`,
+          }],
+        };
+      }
+    }
+  );
+}

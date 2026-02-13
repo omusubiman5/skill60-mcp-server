@@ -1,212 +1,247 @@
-# SKILL60+ MCP Server v3.0 — Full Integration (OpenRouter API)
+# SKILL60+ MCP Server v3.1 — データ取得専用版（LLMなし）
 
-シニア（60歳以上）の生活をバックアップする統合MCPサーバー。
+シニア（60歳以上）の生活をバックアップする MCP サーバー。
+**全ての情報を実際のサイトからリアルタイム取得**します（ハードコードなし）。
 
-**v3.0新機能**: 市場価値検索 + 健康情報 + Botpress連携 + VOICEVOX音声合成 + **OpenRouter API対応**
+**v3.1の特徴**: LLM処理を完全削除。MCPは純粋なデータ取得サーバーとして機能し、LLM側（Claude等）がデータを受け取って分析・アドバイスを生成します。
 
-**OpenRouter API**: 複数のLLMプロバイダーを統合。モデルを環境変数で簡単に切り替え可能。
+AI友人ヨシコの「知識の引き出し」。田中さんが半日かけて調べることを、朝のLINE1通で解決する。
 
-AI友人ヨシコの「知識の引き出し」と「声」。田中さんが半日かけて調べることを、朝のLINE1通で解決する。
+## 13のツール
 
-## 14のツール
+| ツール | 情報源 | 方式 | 備考 |
+|--------|--------|------|------|
+| `skill60_fetch_news` | NHK News Web / Yahoo!ニュース | RSS リアルタイム取得 | 生データのみ |
+| `skill60_search_jgrants` | デジタル庁 jGrants | 公開API リアルタイム検索 | 生データのみ |
+| `skill60_jgrants_detail` | デジタル庁 jGrants | 公開API 詳細取得 | 生データのみ |
+| `skill60_nenkin_news` | 日本年金機構 | サイト スクレイピング | 生データのみ |
+| `skill60_nenkin_page` | 日本年金機構 | サイト ページ本文取得 | 生データのみ |
+| `skill60_fetch_senior_sites` | JRジパング / おとなび / JAL / ANA | サイト 一括スクレイピング | 生データのみ |
+| `skill60_scrape_url` | 任意のURL | 汎用スクレイパー | 生データのみ |
+| `skill60_market_value` | Indeed / ハロワ / シルバー人材 | RSS検索 / サイト取得 | v3.1新規（生データのみ） |
+| `skill60_health_info` | 厚労省 / e-ヘルスネット | サイト取得 | v3.1新規（生データのみ） |
+| `skill60_weather` | 気象庁API | 公開API | v3.1新規（生データのみ） |
+| `skill60_dialect_data` | NINJAL方言データベース | 方言辞書 | v3.1新規（生データのみ） |
+| `skill60_botpress_send` | Botpress Webhook | Webhook送信 | v3.1新規（生データのみ） |
+| `skill60_text_to_speech` | VOICEVOX Engine | 音声合成 | v3.1新規（生データのみ） |
 
-### 基本情報取得（v2.1までのツール）
+### 管理用ツール
+- `skill60_get_errors`: エラーログ取得（MongoDB）
+- `skill60_tool_status`: 全ツールの動作状態確認
 
-| ツール | 情報源 | 方式 |
-|--------|--------|------|
-| `skill60_fetch_news` | NHK / Yahoo!ニュース | RSS |
-| `skill60_search_jgrants` | jGrants | API |
-| `skill60_jgrants_detail` | jGrants | API |
-| `skill60_nenkin_news` | 日本年金機構 | スクレイピング |
-| `skill60_nenkin_page` | 日本年金機構 | スクレイピング |
-| `skill60_fetch_senior_sites` | JR/JAL/ANA | スクレイピング |
-| `skill60_scrape_url` | 任意URL | 汎用スクレイパー |
-| `skill60_dialect_convert` | Claude API | 方言変換 |
-| `skill60_yoshiko_voice` | Claude API | ヨシコの声 |
+## v3.1 アーキテクチャ
 
-### v3.0 新ツール
+### 設計思想
+- **データ取得に特化**: MCPサーバーはデータ取得のみを担当
+- **LLM処理の外部化**: 分析・アドバイス・方言変換等は全てLLM側（Claude等）で実行
+- **エラー監視**: MongoDB Atlasでエラーログを収集・分析
+- **フェールセーフ**: MongoDB未接続でもサーバーは正常動作（ログなしで継続）
 
-| ツール | 機能 | 情報源 |
-|--------|------|--------|
-| `skill60_market_value` | 市場価値・求人検索 | Indeed / ハロワ / シルバー人材 |
-| `skill60_skill_assess` | スキル市場評価 | Claude API + 求人データ |
-| `skill60_health_info` | 健康情報取得 | 厚労省 / e-ヘルスネット |
-| `skill60_weather_advice` | 天気ベース健康アドバイス | 気象庁 API + Claude API |
-| `skill60_text_to_speech` | テキスト音声化 | VOICEVOX Engine |
+### アーキテクチャ図
+```
+┌─────────────────┐
+│   Claude API    │ ← LLM分析・アドバイス生成
+│  (LLM処理層)    │
+└────────┬────────┘
+         │
+         ↓
+┌─────────────────┐
+│  SKILL60+ MCP   │ ← データ取得専用
+│   Server v3.1   │
+└────────┬────────┘
+         │
+         ↓
+┌─────────────────┐         ┌─────────────────┐
+│  外部サイト/API  │         │  MongoDB Atlas  │
+│  (データソース)  │         │  (エラーログ)   │
+└─────────────────┘         └─────────────────┘
+```
+
+### v2.1 → v3.1 の変更点
+
+| v2.1（LLM統合版） | v3.1（データ専用版） |
+|---|---|
+| 方言変換をMCP内で実行 | 方言データを返すのみ |
+| ヨシコキャラクター変換をMCP内で実行 | キャラクター情報を返すのみ |
+| Claude APIをMCP内で呼び出し | LLM呼び出しなし |
+| services/claude.ts存在 | 完全削除 |
+| エラーログなし | MongoDB Atlas統合 |
 
 ## セットアップ
 
+### 必須環境変数
+```bash
+# MongoDB Atlas（オプション、なくても動作）
+MONGODB_URI="mongodb+srv://..."
+
+# Botpress統合（オプション）
+BOTPRESS_WEBHOOK_URL="https://..."
+BOTPRESS_BOT_ID="..."
+
+# VOICEVOX統合（オプション）
+VOICEVOX_API_URL="http://localhost:50021"
+```
+
+### インストール
 ```bash
 npm install
 npm run build
 ```
 
-## 環境変数
+## 起動
 
+### stdio（ローカル / Claude Desktop / Claude Code）
 ```bash
-# 必須（LLM呼び出し：方言変換・スキル評価・健康アドバイス）
-export OPENROUTER_API_KEY="sk-or-v1-..."
-
-# LLMモデル選択（オプション、デフォルト: anthropic/claude-sonnet-4）
-export OPENROUTER_MODEL="anthropic/claude-sonnet-4"
-# 利用可能モデル例:
-# - anthropic/claude-sonnet-4 (推奨)
-# - anthropic/claude-opus-4
-# - google/gemini-2.0-flash-001
-# - openai/gpt-4o
-# - meta-llama/llama-3.3-70b
-
-# HTTP起動時（Hostinger VPS / N8N連携）
-export TRANSPORT=http
-export PORT=3100
-
-# オプション（VOICEVOX音声合成）
-export VOICEVOX_URL=http://localhost:50021
-
-# オプション（Botpress連携）
-export BOTPRESS_WEBHOOK_SECRET="your-secret-key"
-```
-
-### OpenRouter API Key取得方法
-
-1. https://openrouter.ai/ でアカウント作成
-2. API Keys ページで新しいキーを生成
-3. 無料クレジット: $10（試用に十分）
-4. 従量課金: モデルごとに異なる（Claude Sonnet: ~$3/1M tokens）
-
-## 実行
-
-### stdio モード（Claude Desktop等）
-
-```bash
-npm run dev
-# または
 npm start
+# or
+node dist/index.js
 ```
 
-### HTTP モード（Hostinger VPS / N8N連携）
+### HTTP（Hostinger VPS / リモート）
+```bash
+TRANSPORT=http PORT=3100 node dist/index.js
+```
+
+## Claude Desktop 設定
+
+`claude_desktop_config.json` に追加:
+
+```json
+{
+  "mcpServers": {
+    "skill60": {
+      "command": "node",
+      "args": ["/path/to/skill60-mcp-server/dist/index.js"],
+      "env": {
+        "MONGODB_URI": "mongodb+srv://..."
+      }
+    }
+  }
+}
+```
+
+## 使い方
+
+### データ取得 → LLM分析のパターン
+
+```typescript
+// 1. MCPツールでデータ取得
+const dialectData = await mcp.call("skill60_dialect_data", { region: "福井" });
+
+// 2. LLM側で分析・変換
+const prompt = `
+以下の方言データを使って、「今日はいい天気ですね」を福井弁に変換してください。
+
+${dialectData}
+`;
+
+const result = await claude.complete(prompt);
+// → "今日はええ天気やざのぉ"
+```
+
+### 全ツールの動作確認
 
 ```bash
-export TRANSPORT=http
-export PORT=3100
-npm start
+# ツールステータス確認
+mcp.call("skill60_tool_status")
+
+# エラーログ確認
+mcp.call("skill60_get_errors", { limit: 50 })
 ```
 
-エンドポイント:
-- **MCP**: `POST http://localhost:3100/mcp`
-- **Botpress Webhook**: `POST http://localhost:3100/bot`
-- **Health Check**: `GET http://localhost:3100/health`
+## エラー監視
 
-## Botpress連携セットアップ
+MongoDB Atlasに全エラーログを記録:
+- **ツール名**: どのツールでエラーが発生したか
+- **エラーメッセージ**: 詳細なエラー内容
+- **タイムスタンプ**: 発生日時
+- **パラメータ**: エラー発生時のリクエストパラメータ
 
-### 1. Botpress Cloudアカウント作成
-
-https://botpress.com/ でアカウント作成（無料枠あり）
-
-### 2. Botpressでボット作成
-
-新しいBotを作成し、LINE/Web Chatチャンネルを追加
-
-### 3. インテント定義
-
-| インテント | MCPツール | パラメータ例 |
-|-----------|----------|-------------|
-| `greet` | skill60_yoshiko_voice | `{ text: "こんにちは", region: "福井" }` |
-| `ask_news` | skill60_fetch_news | `{ keyword: "年金", limit: 5 }` |
-| `ask_pension` | skill60_nenkin_news | `{}` |
-| `find_grants` | skill60_search_jgrants | `{ keyword: "創業" }` |
-| `find_jobs` | skill60_market_value | `{ skills: ["経理"], region: "東京" }` |
-| `health_check` | skill60_health_info | `{ category: "checkup" }` |
-| `weather` | skill60_weather_advice | `{ region: "福井" }` |
-
-### 4. Webhook設定
-
-Botpressの Settings → Webhooks:
-- URL: `https://{VPS_IP}:3100/bot`
-- Method: POST
-- Headers: `x-botpress-signature: {BOTPRESS_WEBHOOK_SECRET}`
-
-### 5. LINE連携（オプション）
-
-Botpress Cloud で LINE Messaging API を連携
-- LINE Developers で Channel作成
-- Channel Secret / Access Token を Botpress に設定
-
-## VOICEVOX連携セットアップ
-
-### 1. VOICEVOX Engine起動（Docker）
-
-```bash
-# VPSの場合
-docker run -d -p 50021:50021 voicevox/voicevox_engine:latest
-
-# ローカルの場合
-# https://voicevox.hiroshiba.jp/ からダウンロード
+### エラーログスキーマ
+```typescript
+interface ErrorLog {
+  tool: string;              // ツール名
+  message: string;           // エラーメッセージ
+  details?: unknown;         // 詳細情報（パラメータ等）
+  timestamp: Date;           // 発生日時
+  level: "error" | "warn" | "info";  // ログレベル
+}
 ```
 
-### 2. 環境変数設定
+## 技術スタック
 
-```bash
-export VOICEVOX_URL=http://localhost:50021
-```
-
-### 3. テスト
-
-```bash
-curl http://localhost:50021/speakers
-```
-
-### 4. おすすめスピーカー（ヨシコ用）
-
-- **波音リツ (ID: 9)**: 自然な女性の声（デフォルト推奨）
-- **春日部つむぎ (ID: 8)**: 落ち着いた大人の女性
-- **四国めたん (ID: 2)**: はっきりした声
-
-速度: 0.85〜0.95（シニア向けにゆっくり）
-
-## N8Nワークフロー統合例
-
-```
-[朝7時 cronトリガー]
-  ↓
-[SKILL60+ MCP /mcp エンドポイント]
-  ├→ skill60_fetch_news(keyword="年金 シニア")
-  ├→ skill60_nenkin_news()
-  ├→ skill60_weather_advice(region="福井")
-  └→ skill60_market_value(skills=["経理"], region="福井")
-  ↓
-[情報統合ノード]
-  ↓
-[skill60_yoshiko_voice(text=統合テキスト, region="福井")]
-  ↓
-[skill60_text_to_speech(text=ヨシコテキスト)] ※オプション
-  ↓
-[LINE Messaging API送信]
-  ├→ テキストメッセージ（ヨシコの声）
-  └→ 音声メッセージ（VOICEVOXのWAV）
-```
+- TypeScript + MCP SDK v1.12
+- Express（HTTP transport / Hostinger VPS対応）
+- MongoDB Atlas（エラーログ管理）
+- Zod（入力バリデーション）
+- NHK / Yahoo RSS（ニュースリアルタイム取得）
+- jGrants API（デジタル庁 公開API / 認証不要）
+- nenkin.go.jp スクレイピング（年金機構）
+- JR各社 / 航空各社 サイトスクレイピング
+- 汎用URLスクレイパー（任意サイト対応）
+- Indeed RSS（求人検索）
+- 気象庁API（天気予報）
+- NINJAL方言データ（国立国語研究所）
+- Botpress Webhook（チャットボット統合）
+- VOICEVOX Engine（音声合成）
 
 ## バージョン履歴
 
-### v3.0.0（2026-02-14）
-- ✅ **OpenRouter API対応**（Anthropic API → OpenRouter API）
-- ✅ モデル切り替え可能（環境変数 OPENROUTER_MODEL）
-- ✅ 市場価値・求人検索ツール追加（Indeed/ハロワ/シルバー人材）
-- ✅ スキル市場評価ツール追加（LLM）
-- ✅ 健康情報取得ツール追加（厚労省）
-- ✅ 天気ベース健康アドバイス追加（気象庁API + LLM）
-- ✅ Botpress連携（LINE/Web UI フロント）
-- ✅ VOICEVOX音声合成連携
-- ✅ LLM API共通化リファクタ（services/llm.ts）
+### v3.1.0 (2025-02-12)
+- **LLM処理完全削除**: MCPは純粋なデータ取得サーバーに
+- **MongoDB統合**: エラーログ管理機能追加
+- **新ツール追加**: 市場価値検索、健康情報、天気予報、方言データ、Botpress、VOICEVOX
+- **アーキテクチャ変更**: データ取得とLLM処理の完全分離
 
-### v2.1.0
-- ✅ 方言変換ツール追加（Claude API）
-- ✅ ヨシコの声ツール追加（AI友人キャラクター）
+### v3.0.0 (2025-02-11)
+- OpenRouter API統合（Anthropic APIから移行）
+- 市場価値検索、健康情報、Botpress、VOICEVOX統合（LLM処理あり）
 
-### v2.0.0
-- ✅ サイトリアルタイム取得版
-- ✅ 9ツール実装
+### v2.1.0 (2025-01-20)
+- 方言変換機能追加（Claude API統合）
+- ヨシコキャラクター機能追加
+
+### v2.0.0 (2025-01-15)
+- サイト参照版リリース
+- jGrants API統合
+- 年金機構スクレイピング
+- シニア特典サイト一括取得
+
+### v1.0.0 (2025-01-10)
+- 初版リリース（ハードコード版）
+
+## 設計思想
+
+- **全ての経験は価値がある**: 生活スキル（料理・庭仕事・墓参り）も市場価値として評価
+- **AIは友人**: ヨシコが「こんな情報がありますよ」と自然に教える
+- **距離を味方にする**: 地方在住シニアの地理的優位性をマッチングに活用
+- **元気な老人→誰も損しない**: 6者（本人・家族・地域・企業・自治体・国）全員が得をする
+- **データとLLMの分離**: MCPはデータ取得、LLMは分析・アドバイス生成
 
 ## ライセンス
 
-MIT
+MIT License
+
+## 開発
+
+```bash
+# 開発サーバー（TypeScript直接実行）
+npm run dev
+
+# ビルド
+npm run build
+
+# 本番起動
+npm start
+```
+
+## トラブルシューティング
+
+### MongoDB接続エラー
+→ 環境変数 `MONGODB_URI` を確認。未設定でもサーバーは起動します（ログなし）。
+
+### VOICEVOX接続エラー
+→ VOICEVOX Engineが起動しているか確認。デフォルトURL: `http://localhost:50021`
+
+### Botpress送信エラー
+→ `BOTPRESS_WEBHOOK_URL` と `BOTPRESS_BOT_ID` を確認。

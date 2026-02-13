@@ -3,6 +3,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchSite, parseRssItems } from "../services/fetcher.js";
+import { logError } from "../services/db.js";
 
 // NHKカテゴリ別RSS
 const NHK_FEEDS: Record<string, { url: string; label: string }> = {
@@ -54,7 +55,9 @@ async function grab(feedUrl: string, keyword: string, max: number): Promise<Arra
 
     return items.slice(0, max).map(it => ({ ...it, source: src }));
   } catch (e) {
-    return [{ title: `⚠️ 取得失敗: ${feedUrl}`, link: "", pubDate: "", description: String(e), source: "error" }];
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    await logError("skill60_fetch_news", `RSS取得失敗: ${feedUrl} - ${errorMsg}`, { feedUrl, keyword, max });
+    return [{ title: `⚠️ 取得失敗: ${feedUrl}`, link: "", pubDate: "", description: errorMsg, source: "error" }];
   }
 }
 

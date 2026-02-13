@@ -1,7 +1,7 @@
 {
   "name": "skill60-mcp-server",
-  "version": "3.0.0",
-  "description": "SKILL60+ MCP Server v3 - Full Integration (Market + Health + Botpress + VOICEVOX)",
+  "version": "3.1.0",
+  "description": "SKILL60+ MCP Server v3.1 - Data-Only (No LLM)",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^4.21.0",
+    "mongodb": "^7.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

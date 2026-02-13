@@ -3,6 +3,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchSite, stripHtml } from "../services/fetcher.js";
+import { logError } from "../services/db.js";
 
 const SITES = {
   zipangu: {
@@ -143,7 +144,9 @@ HTMLのメインコンテンツを自動抽出し、テキストとして返し�
           content: [{ type: "text" as const, text: `🌐 ${params.url}\n\n${content}` }],
         };
       } catch (e) {
-        return { content: [{ type: "text" as const, text: `❌ URL取得エラー: ${e instanceof Error ? e.message : String(e)}` }] };
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        await logError("skill60_scrape_url", `URL取得エラー: ${errorMsg}`, params);
+        return { content: [{ type: "text" as const, text: `❌ URL取得エラー: ${errorMsg}` }] };
       }
     }
   );
