@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchSite, stripHtml } from "../services/fetcher.js";
+import { logError } from "../services/db.js";
 
 const NENKIN_BASE = "https://www.nenkin.go.jp";
 
@@ -100,7 +101,9 @@ export function registerPensionTools(server: McpServer): void {
           }],
         };
       } catch (e) {
-        return { content: [{ type: "text" as const, text: `❌ 年金機構サイト取得エラー: ${e instanceof Error ? e.message : String(e)}` }] };
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        await logError("skill60_nenkin_news", `年金機構ニュース取得エラー: ${errorMsg}`, params);
+        return { content: [{ type: "text" as const, text: `❌ 年金機構サイト取得エラー: ${errorMsg}` }] };
       }
     }
   );
@@ -130,7 +133,9 @@ export function registerPensionTools(server: McpServer): void {
           }],
         };
       } catch (e) {
-        return { content: [{ type: "text" as const, text: `❌ ページ取得エラー: ${e instanceof Error ? e.message : String(e)}` }] };
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        await logError("skill60_nenkin_page", `年金機構ページ取得エラー: ${errorMsg}`, params);
+        return { content: [{ type: "text" as const, text: `❌ ページ取得エラー: ${errorMsg}` }] };
       }
     }
   );
