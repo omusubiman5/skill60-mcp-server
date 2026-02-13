@@ -1,11 +1,11 @@
-# SKILL60+ MCP Server v2 — サイト参照版
+# SKILL60+ MCP Server v2.1 — サイト参照版 + 方言変換
 
 シニア（60歳以上）の生活をバックアップする MCP サーバー。
-**全ての情報を実際のサイトからリアルタイム取得**します（ハードコードなし）。
+**全ての情報を実際のサイトからリアルタイム取得** + **Claude APIで自然な方言変換**。
 
-AI友人ヨシコの「知識の引き出し」。田中さんが半日かけて調べることを、朝のLINE1通で解決する。
+AI友人ヨシコの「知識の引き出し」と「声」。田中さんが半日かけて調べることを、朝のLINE1通で解決する。
 
-## 7つのツール
+## 9つのツール
 
 | ツール | 情報源 | 方式 |
 |--------|--------|------|
@@ -16,6 +16,22 @@ AI友人ヨシコの「知識の引き出し」。田中さんが半日かけて
 | `skill60_nenkin_page` | 日本年金機構 | サイト ページ本文取得 |
 | `skill60_fetch_senior_sites` | JRジパング / おとなび / JAL / ANA | サイト 一括スクレイピング |
 | `skill60_scrape_url` | 任意のURL | 汎用スクレイパー |
+| `skill60_dialect_convert` | Claude API | 方言変換（全国対応） |
+| `skill60_yoshiko_voice` | Claude API | ヨシコの声（AI友人キャラクター） |
+
+## 方言変換ツール（v2.1 新機能）
+
+辞書ベース（語尾だけ変わる）ではなく、Claude APIの言語力で **語彙・表現・言い回し** まで含めた本物の方言を生成。
+
+### skill60_dialect_convert
+- **対応地域**: 福井, 大阪, 京都, 博多, 広島, 名古屋, 東北, 沖縄, 北海道, 秋田, 津軽, 鹿児島, 石川, 富山 + 任意の地域
+- **口調**: friendly / gentle / energetic / elderly
+- **濃さ**: light（ほんのり）/ medium（自然）/ strong（ガッツリ）
+
+### skill60_yoshiko_voice
+- 60代女性「ヨシコ」のキャラクターでテキストを変換
+- 冷たい行政情報 → 温かい友人のアドバイスに変換
+- 「こんなんあったんやけど、知っとる？」と自然に教えてくれる
 
 ## セットアップ
 
@@ -24,30 +40,40 @@ npm install
 npm run build
 ```
 
+## 環境変数
+
+```bash
+# 方言変換に必要（skill60_dialect_convert / skill60_yoshiko_voice）
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# HTTP起動時（Hostinger VPS）
+export TRANSPORT=http
+export PORT=3100
+```
+
 ## 起動
 
 ### stdio（ローカル / Claude Desktop / Claude Code）
 ```bash
 npm start
-# or
-node dist/index.js
 ```
 
 ### HTTP（Hostinger VPS / リモート）
 ```bash
-TRANSPORT=http PORT=3100 node dist/index.js
+TRANSPORT=http PORT=3100 ANTHROPIC_API_KEY=sk-ant-... node dist/index.js
 ```
 
 ## Claude Desktop 設定
-
-`claude_desktop_config.json` に追加:
 
 ```json
 {
   "mcpServers": {
     "skill60": {
       "command": "node",
-      "args": ["/path/to/skill60-mcp-server/dist/index.js"]
+      "args": ["/path/to/skill60-mcp-server/dist/index.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
     }
   }
 }
@@ -55,27 +81,26 @@ TRANSPORT=http PORT=3100 node dist/index.js
 
 ## 設計思想
 
-- **全ての経験は価値がある**: 生活スキル（料理・庭仕事・墓参り）も市場価値として評価
-- **AIは友人**: ヨシコが「こんな情報がありますよ」と自然に教える
-- **距離を味方にする**: 地方在住シニアの地理的優位性をマッチングに活用
-- **元気な老人→誰も損しない**: 6者（本人・家族・地域・企業・自治体・国）全員が得をする
+- **全ての経験は価値がある**: 生活スキルも市場価値として評価
+- **AIは友人**: ヨシコが自然に教える（方言で！）
+- **距離を味方にする**: 地方在住シニアの地理的優位性
+- **元気な老人→誰も損しない**: 6者全員が得をする
 
 ## 技術スタック
 
 - TypeScript + MCP SDK v1.12
 - Express（HTTP transport / Hostinger VPS対応）
 - Zod（入力バリデーション）
-- NHK / Yahoo RSS（ニュースリアルタイム取得）
-- jGrants API（デジタル庁 公開API / 認証不要）
-- nenkin.go.jp スクレイピング（年金機構）
+- Anthropic Claude API（方言変換）
+- NHK / Yahoo RSS（ニュース）
+- jGrants API（デジタル庁 公開API）
+- nenkin.go.jp スクレイピング
 - JR各社 / 航空各社 サイトスクレイピング
-- 汎用URLスクレイパー（任意サイト対応）
 
-## v1 → v2 の変更点
+## バージョン履歴
 
-| v1（ハードコード版） | v2（サイト参照版） |
+| バージョン | 内容 |
 |---|---|
-| 助成金6件を手動登録 | jGrants API で数千件をリアルタイム検索 |
-| 年金情報を固定テキスト | nenkin.go.jp から最新情報を直接取得 |
-| 特典15件を手動登録 | JR/航空6サイトを一括スクレイピング |
-| ニュースは取得試行のみ | NHK+Yahoo RSSを並列取得・フィルタリング |
+| v1.0 | ハードコード版（助成金6件、年金固定テキスト、特典15件） |
+| v2.0 | サイト参照版（jGrants API、NHK/Yahoo RSS、スクレイピング） |
+| v2.1 | 方言変換追加（Claude API、ヨシコの声、全国14地域ヒント） |
