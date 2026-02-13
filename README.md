@@ -1,8 +1,10 @@
-# SKILL60+ MCP Server v3.0 — Full Integration
+# SKILL60+ MCP Server v3.0 — Full Integration (OpenRouter API)
 
 シニア（60歳以上）の生活をバックアップする統合MCPサーバー。
 
-**v3.0新機能**: 市場価値検索 + 健康情報 + Botpress連携 + VOICEVOX音声合成
+**v3.0新機能**: 市場価値検索 + 健康情報 + Botpress連携 + VOICEVOX音声合成 + **OpenRouter API対応**
+
+**OpenRouter API**: 複数のLLMプロバイダーを統合。モデルを環境変数で簡単に切り替え可能。
 
 AI友人ヨシコの「知識の引き出し」と「声」。田中さんが半日かけて調べることを、朝のLINE1通で解決する。
 
@@ -42,8 +44,17 @@ npm run build
 ## 環境変数
 
 ```bash
-# 必須（方言変換・スキル評価・健康アドバイス）
-export ANTHROPIC_API_KEY="sk-ant-..."
+# 必須（LLM呼び出し：方言変換・スキル評価・健康アドバイス）
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# LLMモデル選択（オプション、デフォルト: anthropic/claude-sonnet-4）
+export OPENROUTER_MODEL="anthropic/claude-sonnet-4"
+# 利用可能モデル例:
+# - anthropic/claude-sonnet-4 (推奨)
+# - anthropic/claude-opus-4
+# - google/gemini-2.0-flash-001
+# - openai/gpt-4o
+# - meta-llama/llama-3.3-70b
 
 # HTTP起動時（Hostinger VPS / N8N連携）
 export TRANSPORT=http
@@ -55,6 +66,13 @@ export VOICEVOX_URL=http://localhost:50021
 # オプション（Botpress連携）
 export BOTPRESS_WEBHOOK_SECRET="your-secret-key"
 ```
+
+### OpenRouter API Key取得方法
+
+1. https://openrouter.ai/ でアカウント作成
+2. API Keys ページで新しいキーを生成
+3. 無料クレジット: $10（試用に十分）
+4. 従量課金: モデルごとに異なる（Claude Sonnet: ~$3/1M tokens）
 
 ## 実行
 
@@ -171,13 +189,15 @@ curl http://localhost:50021/speakers
 ## バージョン履歴
 
 ### v3.0.0（2026-02-14）
+- ✅ **OpenRouter API対応**（Anthropic API → OpenRouter API）
+- ✅ モデル切り替え可能（環境変数 OPENROUTER_MODEL）
 - ✅ 市場価値・求人検索ツール追加（Indeed/ハロワ/シルバー人材）
-- ✅ スキル市場評価ツール追加（Claude API）
+- ✅ スキル市場評価ツール追加（LLM）
 - ✅ 健康情報取得ツール追加（厚労省）
-- ✅ 天気ベース健康アドバイス追加（気象庁API + Claude API）
+- ✅ 天気ベース健康アドバイス追加（気象庁API + LLM）
 - ✅ Botpress連携（LINE/Web UI フロント）
 - ✅ VOICEVOX音声合成連携
-- ✅ Claude API共通化リファクタ
+- ✅ LLM API共通化リファクタ（services/llm.ts）
 
 ### v2.1.0
 - ✅ 方言変換ツール追加（Claude API）

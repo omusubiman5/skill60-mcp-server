@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { callClaude } from "../services/claude.js";
+import { callLLM } from "../services/llm.js";
 
 // 地域別ヒント（プロンプト補強用）
 const DIALECT_HINTS: Record<string, string> = {
@@ -31,7 +31,7 @@ function getHint(region: string): string {
   return `${region}の方言の特徴的な語彙・語尾・表現を適度に使う。`;
 }
 
-// callClaude は services/claude.ts から共通インポート
+// callLLM は services/claude.ts から共通インポート
 
 // === スキーマ定義 ===
 
@@ -101,7 +101,7 @@ Claude APIを使い、語尾だけでなく語彙・表現まで含めた自然�
 ${hint}
 ${strengthNote[params.strength]}`;
 
-        const result = await callClaude(system, params.text);
+        const result = await callLLM(system, params.text);
 
         return {
           content: [{
@@ -157,7 +157,7 @@ ${hint}
 情報の正確さは保ちつつ、温かみのある伝え方に。
 ヨシコの発言だけを返してください（説明不要）。`;
 
-        const result = await callClaude(system, params.text);
+        const result = await callLLM(system, params.text);
 
         return {
           content: [{

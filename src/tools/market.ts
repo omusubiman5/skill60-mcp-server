@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchSite } from "../services/fetcher.js";
-import { callClaude } from "../services/claude.js";
+import { callLLM } from "../services/llm.js";
 
 // === スキーマ定義 ===
 
@@ -182,7 +182,7 @@ ${params.skill_description}
 【Indeed検索結果】
 ${indeedResult}`;
 
-        const analysis = await callClaude(systemPrompt, userText);
+        const analysis = await callLLM(systemPrompt, userText);
 
         return {
           content: [{

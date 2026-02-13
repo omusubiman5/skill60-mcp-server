@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fetchSite, fetchJson } from "../services/fetcher.js";
-import { callClaude } from "../services/claude.js";
+import { callLLM } from "../services/llm.js";
 
 // === 地域コード対応表（気象庁） ===
 
@@ -229,7 +229,7 @@ export function registerHealthTools(server: McpServer): void {
 
 温かみのある、わかりやすい言葉で伝えてください。`;
 
-        const advice = await callClaude(systemPrompt, weatherInfo);
+        const advice = await callLLM(systemPrompt, weatherInfo);
 
         return {
           content: [{
