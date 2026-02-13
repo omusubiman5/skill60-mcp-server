@@ -1,37 +1,36 @@
-# SKILL60+ MCP Server v2.1 — サイト参照版 + 方言変換
+# SKILL60+ MCP Server v3.0 — Full Integration
 
-シニア（60歳以上）の生活をバックアップする MCP サーバー。
-**全ての情報を実際のサイトからリアルタイム取得** + **Claude APIで自然な方言変換**。
+シニア（60歳以上）の生活をバックアップする統合MCPサーバー。
+
+**v3.0新機能**: 市場価値検索 + 健康情報 + Botpress連携 + VOICEVOX音声合成
 
 AI友人ヨシコの「知識の引き出し」と「声」。田中さんが半日かけて調べることを、朝のLINE1通で解決する。
 
-## 9つのツール
+## 14のツール
+
+### 基本情報取得（v2.1までのツール）
 
 | ツール | 情報源 | 方式 |
 |--------|--------|------|
-| `skill60_fetch_news` | NHK News Web / Yahoo!ニュース | RSS リアルタイム取得 |
-| `skill60_search_jgrants` | デジタル庁 jGrants | 公開API リアルタイム検索 |
-| `skill60_jgrants_detail` | デジタル庁 jGrants | 公開API 詳細取得 |
-| `skill60_nenkin_news` | 日本年金機構 | サイト スクレイピング |
-| `skill60_nenkin_page` | 日本年金機構 | サイト ページ本文取得 |
-| `skill60_fetch_senior_sites` | JRジパング / おとなび / JAL / ANA | サイト 一括スクレイピング |
-| `skill60_scrape_url` | 任意のURL | 汎用スクレイパー |
-| `skill60_dialect_convert` | Claude API | 方言変換（全国対応） |
-| `skill60_yoshiko_voice` | Claude API | ヨシコの声（AI友人キャラクター） |
+| `skill60_fetch_news` | NHK / Yahoo!ニュース | RSS |
+| `skill60_search_jgrants` | jGrants | API |
+| `skill60_jgrants_detail` | jGrants | API |
+| `skill60_nenkin_news` | 日本年金機構 | スクレイピング |
+| `skill60_nenkin_page` | 日本年金機構 | スクレイピング |
+| `skill60_fetch_senior_sites` | JR/JAL/ANA | スクレイピング |
+| `skill60_scrape_url` | 任意URL | 汎用スクレイパー |
+| `skill60_dialect_convert` | Claude API | 方言変換 |
+| `skill60_yoshiko_voice` | Claude API | ヨシコの声 |
 
-## 方言変換ツール（v2.1 新機能）
+### v3.0 新ツール
 
-辞書ベース（語尾だけ変わる）ではなく、Claude APIの言語力で **語彙・表現・言い回し** まで含めた本物の方言を生成。
-
-### skill60_dialect_convert
-- **対応地域**: 福井, 大阪, 京都, 博多, 広島, 名古屋, 東北, 沖縄, 北海道, 秋田, 津軽, 鹿児島, 石川, 富山 + 任意の地域
-- **口調**: friendly / gentle / energetic / elderly
-- **濃さ**: light（ほんのり）/ medium（自然）/ strong（ガッツリ）
-
-### skill60_yoshiko_voice
-- 60代女性「ヨシコ」のキャラクターでテキストを変換
-- 冷たい行政情報 → 温かい友人のアドバイスに変換
-- 「こんなんあったんやけど、知っとる？」と自然に教えてくれる
+| ツール | 機能 | 情報源 |
+|--------|------|--------|
+| `skill60_market_value` | 市場価値・求人検索 | Indeed / ハロワ / シルバー人材 |
+| `skill60_skill_assess` | スキル市場評価 | Claude API + 求人データ |
+| `skill60_health_info` | 健康情報取得 | 厚労省 / e-ヘルスネット |
+| `skill60_weather_advice` | 天気ベース健康アドバイス | 気象庁 API + Claude API |
+| `skill60_text_to_speech` | テキスト音声化 | VOICEVOX Engine |
 
 ## セットアップ
 
@@ -43,64 +42,151 @@ npm run build
 ## 環境変数
 
 ```bash
-# 方言変換に必要（skill60_dialect_convert / skill60_yoshiko_voice）
+# 必須（方言変換・スキル評価・健康アドバイス）
 export ANTHROPIC_API_KEY="sk-ant-..."
 
-# HTTP起動時（Hostinger VPS）
+# HTTP起動時（Hostinger VPS / N8N連携）
 export TRANSPORT=http
 export PORT=3100
+
+# オプション（VOICEVOX音声合成）
+export VOICEVOX_URL=http://localhost:50021
+
+# オプション（Botpress連携）
+export BOTPRESS_WEBHOOK_SECRET="your-secret-key"
 ```
 
-## 起動
+## 実行
 
-### stdio（ローカル / Claude Desktop / Claude Code）
+### stdio モード（Claude Desktop等）
+
 ```bash
+npm run dev
+# または
 npm start
 ```
 
-### HTTP（Hostinger VPS / リモート）
+### HTTP モード（Hostinger VPS / N8N連携）
+
 ```bash
-TRANSPORT=http PORT=3100 ANTHROPIC_API_KEY=sk-ant-... node dist/index.js
+export TRANSPORT=http
+export PORT=3100
+npm start
 ```
 
-## Claude Desktop 設定
+エンドポイント:
+- **MCP**: `POST http://localhost:3100/mcp`
+- **Botpress Webhook**: `POST http://localhost:3100/bot`
+- **Health Check**: `GET http://localhost:3100/health`
 
-```json
-{
-  "mcpServers": {
-    "skill60": {
-      "command": "node",
-      "args": ["/path/to/skill60-mcp-server/dist/index.js"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-..."
-      }
-    }
-  }
-}
+## Botpress連携セットアップ
+
+### 1. Botpress Cloudアカウント作成
+
+https://botpress.com/ でアカウント作成（無料枠あり）
+
+### 2. Botpressでボット作成
+
+新しいBotを作成し、LINE/Web Chatチャンネルを追加
+
+### 3. インテント定義
+
+| インテント | MCPツール | パラメータ例 |
+|-----------|----------|-------------|
+| `greet` | skill60_yoshiko_voice | `{ text: "こんにちは", region: "福井" }` |
+| `ask_news` | skill60_fetch_news | `{ keyword: "年金", limit: 5 }` |
+| `ask_pension` | skill60_nenkin_news | `{}` |
+| `find_grants` | skill60_search_jgrants | `{ keyword: "創業" }` |
+| `find_jobs` | skill60_market_value | `{ skills: ["経理"], region: "東京" }` |
+| `health_check` | skill60_health_info | `{ category: "checkup" }` |
+| `weather` | skill60_weather_advice | `{ region: "福井" }` |
+
+### 4. Webhook設定
+
+Botpressの Settings → Webhooks:
+- URL: `https://{VPS_IP}:3100/bot`
+- Method: POST
+- Headers: `x-botpress-signature: {BOTPRESS_WEBHOOK_SECRET}`
+
+### 5. LINE連携（オプション）
+
+Botpress Cloud で LINE Messaging API を連携
+- LINE Developers で Channel作成
+- Channel Secret / Access Token を Botpress に設定
+
+## VOICEVOX連携セットアップ
+
+### 1. VOICEVOX Engine起動（Docker）
+
+```bash
+# VPSの場合
+docker run -d -p 50021:50021 voicevox/voicevox_engine:latest
+
+# ローカルの場合
+# https://voicevox.hiroshiba.jp/ からダウンロード
 ```
 
-## 設計思想
+### 2. 環境変数設定
 
-- **全ての経験は価値がある**: 生活スキルも市場価値として評価
-- **AIは友人**: ヨシコが自然に教える（方言で！）
-- **距離を味方にする**: 地方在住シニアの地理的優位性
-- **元気な老人→誰も損しない**: 6者全員が得をする
+```bash
+export VOICEVOX_URL=http://localhost:50021
+```
 
-## 技術スタック
+### 3. テスト
 
-- TypeScript + MCP SDK v1.12
-- Express（HTTP transport / Hostinger VPS対応）
-- Zod（入力バリデーション）
-- Anthropic Claude API（方言変換）
-- NHK / Yahoo RSS（ニュース）
-- jGrants API（デジタル庁 公開API）
-- nenkin.go.jp スクレイピング
-- JR各社 / 航空各社 サイトスクレイピング
+```bash
+curl http://localhost:50021/speakers
+```
+
+### 4. おすすめスピーカー（ヨシコ用）
+
+- **波音リツ (ID: 9)**: 自然な女性の声（デフォルト推奨）
+- **春日部つむぎ (ID: 8)**: 落ち着いた大人の女性
+- **四国めたん (ID: 2)**: はっきりした声
+
+速度: 0.85〜0.95（シニア向けにゆっくり）
+
+## N8Nワークフロー統合例
+
+```
+[朝7時 cronトリガー]
+  ↓
+[SKILL60+ MCP /mcp エンドポイント]
+  ├→ skill60_fetch_news(keyword="年金 シニア")
+  ├→ skill60_nenkin_news()
+  ├→ skill60_weather_advice(region="福井")
+  └→ skill60_market_value(skills=["経理"], region="福井")
+  ↓
+[情報統合ノード]
+  ↓
+[skill60_yoshiko_voice(text=統合テキスト, region="福井")]
+  ↓
+[skill60_text_to_speech(text=ヨシコテキスト)] ※オプション
+  ↓
+[LINE Messaging API送信]
+  ├→ テキストメッセージ（ヨシコの声）
+  └→ 音声メッセージ（VOICEVOXのWAV）
+```
 
 ## バージョン履歴
 
-| バージョン | 内容 |
-|---|---|
-| v1.0 | ハードコード版（助成金6件、年金固定テキスト、特典15件） |
-| v2.0 | サイト参照版（jGrants API、NHK/Yahoo RSS、スクレイピング） |
-| v2.1 | 方言変換追加（Claude API、ヨシコの声、全国14地域ヒント） |
+### v3.0.0（2026-02-14）
+- ✅ 市場価値・求人検索ツール追加（Indeed/ハロワ/シルバー人材）
+- ✅ スキル市場評価ツール追加（Claude API）
+- ✅ 健康情報取得ツール追加（厚労省）
+- ✅ 天気ベース健康アドバイス追加（気象庁API + Claude API）
+- ✅ Botpress連携（LINE/Web UI フロント）
+- ✅ VOICEVOX音声合成連携
+- ✅ Claude API共通化リファクタ
+
+### v2.1.0
+- ✅ 方言変換ツール追加（Claude API）
+- ✅ ヨシコの声ツール追加（AI友人キャラクター）
+
+### v2.0.0
+- ✅ サイトリアルタイム取得版
+- ✅ 9ツール実装
+
+## ライセンス
+
+MIT

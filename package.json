@@ -1,7 +1,7 @@
 {
   "name": "skill60-mcp-server",
-  "version": "2.0.0",
-  "description": "SKILL60+ MCP Server v2 - Live Site Fetch",
+  "version": "3.0.0",
+  "description": "SKILL60+ MCP Server v3 - Full Integration (Market + Health + Botpress + VOICEVOX)",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
