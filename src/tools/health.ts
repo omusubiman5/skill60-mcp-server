@@ -1,8 +1,8 @@
-// SKILL60+ 健康・天気情報ツール（生データのみ、LLMなし）
+// SKILL60+ 健康・天気情報ツール（e-Stat API + 気象庁API）
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fetchSite, fetchJson } from "../services/fetcher.js";
+import { fetchJson } from "../services/fetcher.js";
 import { logError } from "../services/db.js";
 
 // === 地域コード対応表（気象庁） ===
@@ -30,15 +30,38 @@ function getAreaCode(region: string): string {
   return "180000"; // デフォルト: 福井
 }
 
+// === e-Stat 統計ID対応表 ===
+// カテゴリごとの代表的な統計調査ID（国民健康・栄養調査等）
+const ESTAT_STATS_IDS: Record<string, { statsDataId: string; label: string }> = {
+  checkup: { statsDataId: "0003224281", label: "特定健康診査・特定保健指導の実施状況" },
+  exercise: { statsDataId: "0003224287", label: "運動習慣に関する統計" },
+  nutrition: { statsDataId: "0003224278", label: "栄養・食事に関する統計" },
+  general:   { statsDataId: "0003224277", label: "国民健康・栄養調査" },
+};
+
+// === e-Stat APIレスポンス型（簡略）===
+
+interface EStatResponse {
+  GET_STATS_DATA?: {
+    RESULT?: { STATUS?: number; ERROR_MSG?: string };
+    PARAMETER?: { TABLE_INF?: { STATISTICS_NAME?: string; TITLE?: string } };
+    STATISTICAL_DATA?: {
+      TABLE_INF?: { STATISTICS_NAME?: string; TITLE?: string };
+      DATA_INF?: {
+        NOTE?: Array<{ $: string; "@char"?: string }> | { $: string };
+        VALUE?: Array<{ $?: string; "@cat01"?: string; "@area"?: string; "@time"?: string }>;
+      };
+    };
+  };
+}
+
 // === スキーマ定義 ===
 
-const HealthInfoSchema = z.object({
-  category: z.enum(["checkup", "exercise", "nutrition", "mental", "general"]).default("general")
-    .describe("カテゴリ: checkup(健診), exercise(運動), nutrition(栄養), mental(メンタル), general(全般)"),
+const HealthStatsSchema = z.object({
+  category: z.enum(["checkup", "exercise", "nutrition", "general"]).default("general")
+    .describe("カテゴリ: checkup(健診), exercise(運動), nutrition(栄養), general(全般)"),
   keyword: z.string().max(100).default("")
     .describe("検索キーワード（オプション）"),
-  region: z.string().min(1).max(50).default("全国")
-    .describe("地域（自治体健診情報用）"),
 }).strict();
 
 const WeatherSchema = z.object({
@@ -50,72 +73,115 @@ const WeatherSchema = z.object({
 
 export function registerHealthTools(server: McpServer): void {
 
-  // ── 1. 健康情報取得 ──
+  // ── 1. 健康統計取得（e-Stat API） ──
   server.registerTool(
-    "skill60_health_info",
+    "skill60_health_stats",
     {
-      title: "健康情報取得（生データ）",
-      description: `厚生労働省・e-ヘルスネットから健康情報を取得します。
+      title: "健康統計取得（e-Stat API）",
+      description: `e-Stat（政府統計の総合窓口）APIから健康関連統計データを取得します。
 
 カテゴリ:
-- checkup: 健診・検診情報
-- exercise: 運動・身体活動
-- nutrition: 栄養・食生活
-- mental: こころの健康
-- general: 全般情報
+- checkup: 特定健診・特定保健指導の実施状況
+- exercise: 運動習慣に関する統計
+- nutrition: 栄養・食事に関する統計
+- general: 国民健康・栄養調査（全般）
+
+環境変数 ESTAT_APP_ID が必要です。未設定の場合はe-Statの検索URLを返します。
 
 **このツールは生データを返すのみ。アドバイスは行いません。**
 LLM側でアドバイスを生成してください。`,
-      inputSchema: HealthInfoSchema,
+      inputSchema: HealthStatsSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (params) => {
-      try {
-        const categoryNames: Record<string, string> = {
-          checkup: "健診・検診",
-          exercise: "運動・身体活動",
-          nutrition: "栄養・食生活",
-          mental: "こころの健康",
-          general: "健康情報全般",
+      const appId = process.env.ESTAT_APP_ID;
+      const statsInfo = ESTAT_STATS_IDS[params.category] ?? ESTAT_STATS_IDS["general"]!;
+      const keywordQuery = params.keyword ? `&searchWord=${encodeURIComponent(params.keyword)}` : "";
+      const directUrl = `https://www.e-stat.go.jp/stat-search/files?page=1&query=${encodeURIComponent(statsInfo.label + (params.keyword ? " " + params.keyword : ""))}`;
+
+      // APIキー未設定の場合はgraceful degradation
+      if (!appId) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `🏥 健康統計情報（e-Stat）\n` +
+              `カテゴリ: ${statsInfo.label}\n\n` +
+              `⚠️ ESTAT_APP_ID が未設定です。e-Statで直接検索してください:\n` +
+              `🔗 ${directUrl}\n\n` +
+              `【e-Stat 関連統計】\n` +
+              `- 国民健康・栄養調査: https://www.e-stat.go.jp/stat-search?page=1&query=%E5%9B%BD%E6%B0%91%E5%81%A5%E5%BA%B7%E6%A0%84%E9%A4%8A%E8%AA%BF%E6%9F%BB\n` +
+              `- 特定健診: https://www.e-stat.go.jp/stat-search?page=1&query=%E7%89%B9%E5%AE%9A%E5%81%A5%E5%BA%B7%E8%A8%BA%E6%9F%BB`,
+          }],
         };
+      }
 
-        // 厚労省健康情報ページ
-        const mhlwUrl = "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/kenkou/index.html";
+      try {
+        const url = `https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData?appId=${encodeURIComponent(appId)}&statsDataId=${statsInfo.statsDataId}&limit=10${keywordQuery}`;
 
-        let result = `🏥 健康情報（生データ）\n` +
-                    `カテゴリ: ${categoryNames[params.category]}\n` +
-                    `地域: ${params.region}\n\n` +
-                    `【厚生労働省】\n` +
-                    `健康情報サイト: ${mhlwUrl}\n\n`;
-
-        // e-ヘルスネットのキーワード検索
-        if (params.keyword) {
-          const ehealthUrl = `https://www.e-healthnet.mhlw.go.jp/information/search_result?q=${encodeURIComponent(params.keyword)}`;
-          result += `【e-ヘルスネット検索】\n` +
-                   `キーワード: "${params.keyword}"\n` +
-                   `検索URL: ${ehealthUrl}\n`;
+        let data: EStatResponse;
+        try {
+          data = await fetchJson<EStatResponse>(url);
+        } catch (fetchErr) {
+          const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          await logError("skill60_health_stats", `e-Stat API 利用不可: ${fetchMsg}`, params);
+          return {
+            content: [{
+              type: "text" as const,
+              text: `⚠️ e-Stat API は現在利用できません（${fetchMsg}）\n\n` +
+                `直接検索はこちら:\n` +
+                `🔗 ${directUrl}`,
+            }],
+          };
         }
+
+        const result = data.GET_STATS_DATA?.RESULT;
+        if (result?.STATUS !== 0) {
+          const errMsg = result?.ERROR_MSG ?? "不明なエラー";
+          await logError("skill60_health_stats", `e-Stat APIエラー: ${errMsg}`, params);
+          return {
+            content: [{
+              type: "text" as const,
+              text: `⚠️ e-Stat API エラー: ${errMsg}\n\n直接検索: 🔗 ${directUrl}`,
+            }],
+          };
+        }
+
+        const tableInf = data.GET_STATS_DATA?.STATISTICAL_DATA?.TABLE_INF;
+        const statsName = tableInf?.STATISTICS_NAME ?? statsInfo.label;
+        const title = tableInf?.TITLE ?? "";
+        const values = data.GET_STATS_DATA?.STATISTICAL_DATA?.DATA_INF?.VALUE ?? [];
+        const valueArray = Array.isArray(values) ? values : [values];
+
+        const sampleValues = valueArray.slice(0, 5).map(v =>
+          `  値: ${v.$ ?? "N/A"}（時点: ${v["@time"] ?? "不明"}, 地域: ${v["@area"] ?? "全国"}）`
+        ).join("\n");
 
         return {
           content: [{
             type: "text" as const,
-            text: result,
+            text: `🏥 健康統計（e-Stat API）\n` +
+              `統計名: ${statsName}\n` +
+              `${title ? `タイトル: ${title}\n` : ""}` +
+              `カテゴリ: ${statsInfo.label}\n\n` +
+              `【データサンプル（最大5件）】\n` +
+              (sampleValues || "データなし") + "\n\n" +
+              `🔗 詳細: ${directUrl}`,
           }],
         };
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);
-        await logError("skill60_health_info", `健康情報取得エラー: ${errorMsg}`, params);
+        await logError("skill60_health_stats", `全体エラー: ${errorMsg}`, params);
         return {
           content: [{
             type: "text" as const,
-            text: `❌ 健康情報取得エラー: ${errorMsg}`,
+            text: `❌ 健康統計取得エラー: ${errorMsg}`,
           }],
         };
       }
     }
   );
 
-  // ── 2. 天気取得 ──
+  // ── 2. 天気取得（気象庁API、変更なし） ──
   server.registerTool(
     "skill60_weather",
     {

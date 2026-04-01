@@ -89,6 +89,10 @@ API: https://api.jgrants-portal.go.jp/exp/v1/public/subsidies
         q.set("keyword", params.keyword);
         if (params.area) q.set("target_area_search", params.area);
         q.set("limit", String(params.limit));
+        // sort・order・acceptance は v1 API の必須パラメータ
+        q.set("sort", "created_date");
+        q.set("order", "DESC");
+        q.set("acceptance", "0");
 
         const url = `${JGRANTS_BASE}?${q.toString()}`;
 

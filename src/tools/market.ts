@@ -1,64 +1,35 @@
-// SKILL60+ 市場価値・求人検索ツール（生データのみ、LLMなし）
+// SKILL60+ 市場価値・求人検索ツール（求人ボックスAPI）
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-// fetchSite は Indeed RSS 廃止により不要となった（2025年以降）
+import { fetchJson } from "../services/fetcher.js";
 import { logError } from "../services/db.js";
 
 // === スキーマ定義 ===
 
-const MarketValueSchema = z.object({
-  skills: z.array(z.string()).min(1).max(5)
+const JobSearchSchema = z.object({
+  skills: z.array(z.string().min(1).max(50)).min(1).max(5)
     .describe("スキル・経験のキーワード（例: ['経理', '簿記', 'Excel']、1-5件）"),
   region: z.string().min(1).max(50).default("福井")
     .describe("地域（例: '福井', '東京', '大阪', '全国'）"),
+  limit: z.number().int().min(1).max(20).default(10)
+    .describe("取得件数（1-20）"),
 }).strict();
 
-// === Indeed RSS検索 ===
+// === 求人ボックス API レスポンス型 ===
 
-async function searchIndeed(keyword: string, region: string): Promise<string> {
-  // Indeed Japan は RSS フィードを廃止済み（2025年以降 404/403 を返す）
-  // graceful degradation: 公式求人検索ページへの誘導を返す
-  const query = encodeURIComponent(`シニア ${keyword}`);
-  const location = encodeURIComponent(region === "全国" ? "" : region);
-  const searchUrl = `https://jp.indeed.com/jobs?q=${query}&l=${location}&sort=date`;
-
-  return `【Indeed求人検索】\n` +
-         `"シニア ${keyword}"（${region}）の求人は以下のサイトで検索できます:\n` +
-         `${searchUrl}\n` +
-         `※ Indeed RSS フィードは廃止されました。直接サイトでご確認ください。`;
+interface KyujinBoxJob {
+  title?: string;
+  company?: string;
+  location?: string;
+  salary?: string;
+  url?: string;
+  description?: string;
 }
 
-// === ハローワーク情報 ===
-
-async function getHelloWorkInfo(keyword: string, region: string): Promise<string> {
-  try {
-    const url = "https://www.hellowork.mhlw.go.jp/";
-    return `【ハローワークインターネットサービス】\n` +
-           `"${keyword}"の求人は以下のサイトで検索できます：\n` +
-           `${url}\n` +
-           `検索キーワード: "${keyword}" + "${region}"`;
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e);
-    await logError("skill60_market_value", `ハローワーク情報取得エラー: ${errorMsg}`, { keyword, region });
-    return `ハローワーク情報取得エラー: ${errorMsg}`;
-  }
-}
-
-// === シルバー人材センター情報 ===
-
-async function getSilverJinzaiInfo(region: string): Promise<string> {
-  try {
-    const url = "https://www.zsjc.or.jp/";
-    return `【全国シルバー人材センター事業協会】\n` +
-           `"${region}"のシルバー人材センターは以下のサイトで検索できます：\n` +
-           `${url}\n` +
-           `主な仕事: 清掃、施設管理、事務補助、保育補助、学習指導、軽作業など`;
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e);
-    await logError("skill60_market_value", `シルバー人材情報取得エラー: ${errorMsg}`, { region });
-    return `シルバー人材情報取得エラー: ${errorMsg}`;
-  }
+interface KyujinBoxResponse {
+  jobs?: KyujinBoxJob[];
+  total?: number;
 }
 
 // === ツール登録 ===
@@ -66,53 +37,101 @@ async function getSilverJinzaiInfo(region: string): Promise<string> {
 export function registerMarketTools(server: McpServer): void {
 
   server.registerTool(
-    "skill60_market_value",
+    "skill60_job_search",
     {
-      title: "市場価値・求人検索（生データ）",
-      description: `指定したスキル・地域で求人情報を検索します。
+      title: "求人検索（求人ボックスAPI）",
+      description: `求人ボックスAPIを使用して求人情報を検索します。
 
-情報源:
-- Indeed Japan: シニア向け求人検索ページのURLを返す（RSS廃止済み）
-- ハローワークインターネットサービス: 公共職業紹介サイトURL
-- 全国シルバー人材センター: シニア向け短時間・軽作業の情報
+情報源: 求人ボックス（https://kyujinbox.com/）
+- シニア・ミドル向け求人を含む日本最大級の求人情報サイト
+- 環境変数 KYUJIN_BOX_API_KEY が未設定の場合は検索URLを返します
 
 **このツールは生データを返すのみ。分析・アドバイスは行いません。**
 LLM側で分析・アドバイスを生成してください。`,
-      inputSchema: MarketValueSchema,
+      inputSchema: JobSearchSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (params) => {
+      const apiKey = process.env.KYUJIN_BOX_API_KEY;
+      const keyword = params.skills.join(" ");
+      const searchUrl = `https://kyujinbox.com/search/?q=${encodeURIComponent(keyword)}&l=${encodeURIComponent(params.region === "全国" ? "" : params.region)}`;
+
+      // APIキー未設定の場合はgraceful degradation
+      if (!apiKey) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `💼 求人検索（求人ボックス）\n` +
+              `スキル: ${keyword}\n` +
+              `地域: ${params.region}\n\n` +
+              `⚠️ KYUJIN_BOX_API_KEY が未設定です。求人ボックスで直接検索してください:\n` +
+              `🔗 ${searchUrl}\n\n` +
+              `【関連情報源】\n` +
+              `- ハローワークインターネットサービス: https://www.hellowork.mhlw.go.jp/\n` +
+              `- 全国シルバー人材センター: https://www.zsjc.or.jp/`,
+          }],
+        };
+      }
+
       try {
-        const keywords = params.skills.join(', ');
+        const url = `https://api.kyujinbox.com/v1/search?keyword=${encodeURIComponent(keyword)}&location=${encodeURIComponent(params.region === "全国" ? "" : params.region)}&limit=${params.limit}`;
 
-        // 並列検索
-        const results = await Promise.all(
-          params.skills.map((skill) => searchIndeed(skill, params.region))
-        );
+        let data: KyujinBoxResponse;
+        try {
+          data = await fetchJson<KyujinBoxResponse>(url);
+        } catch (fetchErr) {
+          const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          await logError("skill60_job_search", `求人ボックスAPI 利用不可: ${fetchMsg}`, params);
+          return {
+            content: [{
+              type: "text" as const,
+              text: `⚠️ 求人ボックスAPI は現在利用できません（${fetchMsg}）\n\n` +
+                `直接検索はこちら:\n` +
+                `🔗 ${searchUrl}`,
+            }],
+          };
+        }
 
-        const helloWorkInfo = await getHelloWorkInfo(keywords, params.region);
-        const silverInfo = await getSilverJinzaiInfo(params.region);
+        const jobs = data.jobs ?? [];
+        const total = data.total ?? jobs.length;
 
-        const output = `💼 市場価値・求人検索結果（生データ）\n` +
-                      `スキル: ${keywords}\n` +
-                      `地域: ${params.region}\n\n` +
-                      `${results.join('\n\n')}\n\n` +
-                      `${helloWorkInfo}\n\n` +
-                      `${silverInfo}`;
+        if (jobs.length === 0) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `💼 求人検索結果\n` +
+                `スキル: ${keyword} / 地域: ${params.region}\n\n` +
+                `検索結果が0件でした。別のキーワードをお試しください。\n` +
+                `🔗 直接検索: ${searchUrl}`,
+            }],
+          };
+        }
+
+        const text = jobs.map((j, i) => {
+          const lines = [`${i + 1}. ${j.title ?? "タイトル不明"}`];
+          if (j.company) lines.push(`   会社: ${j.company}`);
+          if (j.location) lines.push(`   勤務地: ${j.location}`);
+          if (j.salary) lines.push(`   給与: ${j.salary}`);
+          if (j.url) lines.push(`   🔗 ${j.url}`);
+          return lines.join("\n");
+        }).join("\n\n");
 
         return {
           content: [{
             type: "text" as const,
-            text: output,
+            text: `💼 求人検索結果（求人ボックスAPI）\n` +
+              `スキル: ${keyword} / 地域: ${params.region}\n` +
+              `${total}件中${jobs.length}件表示\n\n` +
+              text,
           }],
         };
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);
-        await logError("skill60_market_value", `全体エラー: ${errorMsg}`, params);
+        await logError("skill60_job_search", `全体エラー: ${errorMsg}`, params);
         return {
           content: [{
             type: "text" as const,
-            text: `❌ 市場価値検索エラー: ${errorMsg}`,
+            text: `❌ 求人検索エラー: ${errorMsg}`,
           }],
         };
       }

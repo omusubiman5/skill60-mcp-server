@@ -7,12 +7,8 @@ import { connectDB } from "../src/services/db.js";
 import { registerNewsTools } from "../src/tools/news.js";
 import { registerSubsidyTools } from "../src/tools/jgrants.js";
 import { registerPensionTools } from "../src/tools/pension.js";
-import { registerBenefitTools } from "../src/tools/benefits.js";
 import { registerMarketTools } from "../src/tools/market.js";
 import { registerHealthTools } from "../src/tools/health.js";
-import { registerDialectTools } from "../src/tools/dialect.js";
-import { registerBotpressTools } from "../src/integrations/botpress.js";
-import { registerVoicevoxTools } from "../src/integrations/voicevox.js";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -62,17 +58,13 @@ async function createServer(): Promise<McpServer> {
   await connectDB();
   const server = new McpServer({
     name: "skill60-mcp-server",
-    version: "3.1.0",
+    version: "4.0.0",
   });
   registerNewsTools(server);
   registerSubsidyTools(server);
   registerPensionTools(server);
-  registerBenefitTools(server);
   registerMarketTools(server);
   registerHealthTools(server);
-  registerDialectTools(server);
-  registerBotpressTools(server);
-  registerVoicevoxTools(server);
   return server;
 }
 
