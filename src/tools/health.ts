@@ -36,7 +36,7 @@ const ESTAT_STATS_IDS: Record<string, { statsDataId: string; label: string }> = 
   checkup: { statsDataId: "0003224281", label: "特定健康診査・特定保健指導の実施状況" },
   exercise: { statsDataId: "0003224287", label: "運動習慣に関する統計" },
   nutrition: { statsDataId: "0003224278", label: "栄養・食事に関する統計" },
-  general:   { statsDataId: "0003224277", label: "国民健康・栄養調査" },
+  general:   { statsDataId: "0003224281", label: "国民健康・栄養調査（総合）" },
 };
 
 // === e-Stat APIレスポンス型（簡略）===
