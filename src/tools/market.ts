@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fetchSite } from "../services/fetcher.js";
+// fetchSite は Indeed RSS 廃止により不要となった（2025年以降）
 import { logError } from "../services/db.js";
 
 // === スキーマ定義 ===
@@ -17,40 +17,16 @@ const MarketValueSchema = z.object({
 // === Indeed RSS検索 ===
 
 async function searchIndeed(keyword: string, region: string): Promise<string> {
-  try {
-    const query = encodeURIComponent(`シニア ${keyword}`);
-    const location = encodeURIComponent(region === "全国" ? "" : region);
-    const url = `https://jp.indeed.com/rss?q=${query}&l=${location}&sort=date&limit=20`;
+  // Indeed Japan は RSS フィードを廃止済み（2025年以降 404/403 を返す）
+  // graceful degradation: 公式求人検索ページへの誘導を返す
+  const query = encodeURIComponent(`シニア ${keyword}`);
+  const location = encodeURIComponent(region === "全国" ? "" : region);
+  const searchUrl = `https://jp.indeed.com/jobs?q=${query}&l=${location}&sort=date`;
 
-    const xml = await fetchSite(url);
-
-    // RSS XMLから求人タイトルと会社名を抽出（簡易パース）
-    const itemMatches = xml.matchAll(/<item>(.*?)<\/item>/gs);
-    const items: string[] = [];
-
-    for (const match of itemMatches) {
-      const itemXml = match[1] || "";
-      const titleMatch = itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/);
-      const companyMatch = itemXml.match(/<source[^>]*><!\[CDATA\[(.*?)\]\]><\/source>/);
-
-      if (titleMatch && titleMatch[1]) {
-        const title = titleMatch[1];
-        const company = companyMatch?.[1] || "（企業名不明）";
-        items.push(`${title} - ${company}`);
-      }
-    }
-
-    if (items.length === 0) {
-      return `Indeed: "${keyword}"の求人情報が見つかりませんでした。`;
-    }
-
-    return `【Indeed検索結果: "${keyword}"】（${items.length}件）\n` +
-           items.slice(0, 10).map((item, i) => `${i + 1}. ${item}`).join('\n');
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e);
-    await logError("skill60_market_value", `Indeed検索エラー: ${errorMsg}`, { keyword, region });
-    return `Indeed検索エラー: ${errorMsg}`;
-  }
+  return `【Indeed求人検索】\n` +
+         `"シニア ${keyword}"（${region}）の求人は以下のサイトで検索できます:\n` +
+         `${searchUrl}\n` +
+         `※ Indeed RSS フィードは廃止されました。直接サイトでご確認ください。`;
 }
 
 // === ハローワーク情報 ===
@@ -96,7 +72,7 @@ export function registerMarketTools(server: McpServer): void {
       description: `指定したスキル・地域で求人情報を検索します。
 
 情報源:
-- Indeed Japan (RSS): シニア向け求人をリアルタイム検索
+- Indeed Japan: シニア向け求人検索ページのURLを返す（RSS廃止済み）
 - ハローワークインターネットサービス: 公共職業紹介サイトURL
 - 全国シルバー人材センター: シニア向け短時間・軽作業の情報
 

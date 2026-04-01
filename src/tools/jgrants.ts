@@ -91,7 +91,28 @@ API: https://api.jgrants-portal.go.jp/exp/v1/public/subsidies
         q.set("limit", String(params.limit));
 
         const url = `${JGRANTS_BASE}?${q.toString()}`;
-        const data = await fetchJson<JGrantsListResponse>(url);
+
+        let data: JGrantsListResponse;
+        try {
+          data = await fetchJson<JGrantsListResponse>(url);
+        } catch (fetchErr) {
+          const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          // jGrants API が 400 Bad Request を返す場合（API仕様変更・一時障害）
+          // graceful degradation: 公式サイトへの誘導メッセージを返す
+          await logError("skill60_search_jgrants", `jGrants API 利用不可: ${fetchMsg}`, params);
+          return {
+            content: [{
+              type: "text" as const,
+              text: `⚠️ jGrants API は現在利用できません（${fetchMsg}）\n\n` +
+                `直接検索はこちら:\n` +
+                `🔗 https://jgrants-portal.go.jp/subsidy/searchSubsidy?keyword=${encodeURIComponent(params.keyword)}\n\n` +
+                `【代替情報源】\n` +
+                `- jGrants ポータル: https://jgrants-portal.go.jp/\n` +
+                `- 中小企業庁補助金・給付金: https://mirasapo-plus.go.jp/\n` +
+                `- e-Gov 法令検索: https://elaws.e-gov.go.jp/`,
+            }],
+          };
+        }
 
         const items = data.result ?? [];
         const total = data.metadata?.resultset?.count ?? items.length;
@@ -144,7 +165,22 @@ skill60_search_jgrants で得たIDを渡してください。
     async (params) => {
       try {
         const url = `${JGRANTS_V2}/${params.subsidyId}`;
-        const data = await fetchJson<JGrantsDetailResponse>(url);
+
+        let data: JGrantsDetailResponse;
+        try {
+          data = await fetchJson<JGrantsDetailResponse>(url);
+        } catch (fetchErr) {
+          const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          await logError("skill60_jgrants_detail", `jGrants API 利用不可: ${fetchMsg}`, params);
+          return {
+            content: [{
+              type: "text" as const,
+              text: `⚠️ jGrants API は現在利用できません（${fetchMsg}）\n\n` +
+                `公式サイトで直接確認してください:\n` +
+                `🔗 https://jgrants-portal.go.jp/subsidy/${params.subsidyId}`,
+            }],
+          };
+        }
 
         const s = data.result?.[0];
         if (!s) {
